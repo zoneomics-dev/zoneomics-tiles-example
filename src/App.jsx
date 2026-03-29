@@ -1,8 +1,8 @@
-import "./styles.css";
-import { useState } from "react";
-import { TileLayer, MVTLayer } from "@deck.gl/geo-layers";
-import Deck from "@deck.gl/react";
-import { BitmapLayer } from "@deck.gl/layers";
+import './styles.css';
+import { useState } from 'react';
+import { TileLayer, MVTLayer } from '@deck.gl/geo-layers';
+import Deck from '@deck.gl/react';
+import { BitmapLayer } from '@deck.gl/layers';
 
 export default function App() {
   const [lat, setLat] = useState(26.6245438);
@@ -13,14 +13,14 @@ export default function App() {
       <h1>Zoneomics Tiles API example</h1>
       <div
         style={{
-          display: "flex",
-          flexDirection: "row",
-          gap: "14px",
-          width: "max-content",
-          margin: "0 auto",
+          display: 'flex',
+          flexDirection: 'row',
+          gap: '14px',
+          width: 'max-content',
+          margin: '0 auto',
         }}
       >
-        <div style={{ display: "flex", flexDirection: "row", gap: "8px" }}>
+        <div style={{ display: 'flex', flexDirection: 'row', gap: '8px' }}>
           <input
             placeholder='lat'
             value={lat}
@@ -47,7 +47,7 @@ export default function App() {
         </button>
       </div>
       <div
-        style={{ minHeight: "80vh", maxHeight: "80vh", position: "relative" }}
+        style={{ minHeight: '80vh', maxHeight: '80vh', position: 'relative' }}
       >
         <Deck
           initialViewState={{
@@ -58,8 +58,8 @@ export default function App() {
           controller
           layers={[
             new TileLayer({
-              id: "TileLayer",
-              data: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+              id: 'TileLayer',
+              data: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
               maxZoom: 19,
               minZoom: 0,
               renderSubLayers: (props) => {
@@ -79,7 +79,7 @@ export default function App() {
               pickable: true,
             }),
             new MVTLayer({
-              id: "MVTLayer",
+              id: 'MVTLayer',
               data: `https://api.zoneomics.com/v2/tiles?x={x}&y={y}&z={z}&api_key=${process.env.REACT_APP_API_KEY}`,
               minZoom: 0,
               maxZoom: 20,
@@ -94,7 +94,7 @@ export default function App() {
                   }
                   return hash;
                 }
-                function intToRGBA(i, alpha) {
+                function intToRGBA(i, _alpha) {
                   const r = (i >> 16) & 0xff;
                   const g = (i >> 8) & 0xff;
                   const b = i & 0xff;
