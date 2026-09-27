@@ -1,0 +1,222 @@
+# pr-format — the CM-3 change-record check.
+#
+# Every pull request into development or a production branch needs a
+# Conventional Commits title and a filled-in description. The rulesets on those
+# branches require this check, so a pull request that fails it cannot merge.
+#
+# It reads only the title and description GitHub sends with the event. It
+# checks out nothing, runs nothing from the pull request, and its token has no
+# permissions.
+#
+# Keep this file identical in every zoneomics-dev repo that has it, on both
+# long-lived branches. The production branch is each repo's default branch
+# (main, master or production), so one file serves every repo.
+# The job has no `if:` on purpose: GitHub counts a skipped job as passed for a
+# required check.
+
+name: PR format
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize, ready_for_review]
+    branches: [development, main, master, production]
+
+permissions: {}
+
+concurrency:
+  group: pr-format-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  pr-format:
+    name: pr-format
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Check title and description
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            // The rules match .github/PULL_REQUEST_TEMPLATE.md (full rule) and
+            // .github/PULL_REQUEST_TEMPLATE/release.md (release rule).
+            const pr = context.payload.pull_request;
+            if (!pr) {
+              core.setFailed('pr-format runs on pull request events only.');
+              return;
+            }
+
+            // The production branch is the repository's default branch: main,
+            // master or production. Without it the rule can't be chosen, so fail.
+            const production = (pr.base.repo && pr.base.repo.default_branch) ||
+              (context.payload.repository && context.payload.repository.default_branch);
+            if (!production) {
+              core.setFailed('pr-format: the event does not name the default branch.');
+              return;
+            }
+            const LONG_LIVED = ['development', production];
+            const TYPES = ['feat', 'fix', 'docs', 'style', 'refactor', 'perf', 'test', 'build', 'ci', 'chore', 'revert'];
+
+            const base = pr.base.ref;
+            const head = pr.head.ref;
+            const sameRepo = Boolean(pr.head.repo) && pr.head.repo.full_name === pr.base.repo.full_name;
+            // development <-> production branch is a release or a sync. Every
+            // change inside already has its own full record, so it gets the
+            // release rule. A hotfix into production gets the full rule.
+            const light = sameRepo && base !== head && LONG_LIVED.includes(base) && LONG_LIVED.includes(head);
+            const rule = light ? 'release rule' : 'full rule';
+            const templateUrl = `${context.payload.repository.html_url}/blob/${base}/.github/` +
+              (light ? 'PULL_REQUEST_TEMPLATE/release.md' : 'PULL_REQUEST_TEMPLATE.md');
+
+            const problems = [];
+
+            // Title: Conventional Commits. GitHub's own Revert button titles pass too.
+            const title = (pr.title || '').trim();
+            // Spaces after the colon are fine, as in the standard tools.
+            const TITLE = new RegExp('^(' + TYPES.join('|') + ')(\\([^()\\s][^()]*\\))?!?: +\\S');
+            if (!TITLE.test(title) && !/^Revert ".+"$/.test(title)) {
+              // Name the exact problem first, then give the format.
+              const help = 'Use `type(scope): summary`, for example `fix(export): keep controls columns aligned`. ' +
+                'The type is one of ' + TYPES.join(', ') + ', in lowercase.';
+              const m = /^([A-Za-z]+)(\s*)(\(([^()]*)\))?(!)?(\s*)(:)?(\s*)(.*)$/.exec(title);
+              let what = 'it needs a type and a colon at the start.';
+              if (!title) {
+                what = 'it is empty.';
+              } else if (m && m[7]) {
+                const [, type, spaceBeforeScope, scopeWrap, scope, , spaceBeforeColon, , spaceAfter, summary] = m;
+                if (!TYPES.includes(type)) {
+                  what = TYPES.includes(type.toLowerCase())
+                    ? `write the type in lowercase: \`${type.toLowerCase()}\`, not \`${type}\`.`
+                    : `\`${type}\` is not a type.`;
+                } else if (scopeWrap !== undefined && spaceBeforeScope) {
+                  what = 'remove the space between the type and the scope.';
+                } else if (scopeWrap !== undefined && !/^[^()\s]/.test(scope)) {
+                  what = 'the scope in brackets is empty or starts with a space. Name the area, or remove the brackets.';
+                } else if (spaceBeforeColon || spaceBeforeScope) {
+                  what = 'remove the space before the colon.';
+                } else if (!summary.trim()) {
+                  what = 'add a summary after the colon.';
+                } else if (!spaceAfter) {
+                  what = 'put a space after the colon.';
+                }
+              }
+              problems.push(`Title: ${what} ${help}`);
+            }
+
+            // Description. HTML comments are the template's guidance, so they
+            // never count as an answer; an unclosed one hides the rest.
+            const body = (pr.body || '').replace(/\r\n?/g, '\n').replace(/<!--[\s\S]*?(?:-->|$)/g, '');
+            const norm = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+
+            // "## Heading" sections, ignoring headings inside fenced code blocks.
+            const sections = new Map();
+            let name = null;
+            let lines = [];
+            let fence = null;
+            const flush = () => {
+              if (name !== null) sections.set(name, (sections.get(name) || '') + '\n' + lines.join('\n'));
+            };
+            for (const line of body.split('\n')) {
+              const f = /^ {0,3}(`{3,}|~{3,})/.exec(line);
+              if (f) {
+                if (fence === null) fence = f[1][0];
+                else if (f[1][0] === fence) fence = null;
+              } else if (fence === null) {
+                const h = /^ {0,3}##[ \t]+(.*?)[ \t#]*$/.exec(line);
+                if (h) {
+                  flush();
+                  name = norm(h[1]);
+                  lines = [];
+                  continue;
+                }
+              }
+              if (name !== null) lines.push(line);
+            }
+            flush();
+
+            // What the author actually wrote: no list markers, horizontal rules
+            // or unticked boxes.
+            const text = (s) => (s || '')
+              .replace(/^[ \t]*[-*+][ \t]+\[ \](?:[ \t].*)?$/gm, '')
+              .replace(/^[ \t]*([-*_])(?:[ \t]*\1){2,}[ \t]*$/gm, '')
+              .replace(/^[ \t]*>+/gm, '')
+              .replace(/^[ \t]*(?:[-*+]|\d+[.)])(?=[ \t]|$)/gm, '')
+              .replace(/\s+/g, ' ')
+              .trim();
+            const ticked = (s) => /^[ \t]*[-*+][ \t]+\[[xX]\]/m.test(s || '');
+            // The answer after "label:", up to the next label.
+            const answer = (s, label, others) => {
+              const plain = (s || '').replace(/[*_]/g, '');
+              const at = plain.toLowerCase().indexOf(label);
+              if (at < 0) return '';
+              const rest = plain.slice(at + label.length);
+              let end = rest.length;
+              for (const other of others) {
+                const i = rest.toLowerCase().indexOf(other);
+                if (i >= 0 && i < end) end = i;
+              }
+              return text(rest.slice(0, end).replace(/^\s*:/, ''));
+            };
+
+            const expected = light
+              ? ['What this release contains', 'Verified on staging', 'Rollback']
+              : ['What and why', 'Ticket', 'Changes', 'How this was tested', 'Risk and rollback'];
+            const get = (heading) => sections.get(norm(heading));
+            const check = (heading, ok, message) => {
+              if (get(heading) !== undefined && !ok(get(heading))) problems.push(`${heading}: ${message}`);
+            };
+
+            if (!expected.some((heading) => get(heading) !== undefined)) {
+              problems.push(light
+                ? `Description: a release or sync uses the release template. Copy it from ${templateUrl} and fill it in.`
+                : `Description: it does not use the template. Copy it from ${templateUrl} and fill it in.`);
+            } else {
+              for (const heading of expected) {
+                if (get(heading) === undefined) {
+                  problems.push(`Description: the "## ${heading}" section is missing. Keep the headings from ${templateUrl}`);
+                }
+              }
+              if (light) {
+                check('What this release contains', (s) => text(s).length >= 10,
+                  'say what the release is for and list the pull requests it carries.');
+                check('Verified on staging', (s) => ticked(s) || text(s).length >= 8,
+                  'say what you checked on staging, or why it does not apply.');
+                check('Rollback', (s) => answer(s, 'how to undo it', []).length >= 3,
+                  'answer "How to undo it:".');
+              } else {
+                const ticket = text(get('Ticket'));
+                const hasTicket = /\bZON-\d+\b/i.test(ticket);
+                const noTicket = !hasTicket && /no ticket\s*[—–:,-]+\s*\S.{8,}/i.test(ticket);
+                check('What and why', (s) => text(s).length >= (noTicket ? 80 : 20), noTicket
+                  ? 'with no ticket, this carries the whole story: what prompted the change, what it does, and what goes wrong without it.'
+                  : 'say what changes and why, in a sentence or two.');
+                check('Ticket', () => hasTicket || noTicket,
+                  'give the ticket, like `ZON-1234`, or write `No ticket — <reason>`.');
+                check('Changes', (s) => text(s).length >= 10,
+                  'list what changed, one bullet per area.');
+                check('How this was tested', (s) => ticked(s) || text(s).length >= 10,
+                  'tick what you did, or write why the boxes do not apply.');
+                check('Risk and rollback', (s) => answer(s, 'what could this break', ['how to undo it']).length >= 3,
+                  'answer "What could this break:". "None" is fine for a copy change.');
+                check('Risk and rollback', (s) => answer(s, 'how to undo it', ['what could this break']).length >= 3,
+                  'answer "How to undo it:".');
+              }
+            }
+
+            if (problems.length === 0) {
+              core.info(`pr-format: the title and description pass the ${rule}.`);
+              await core.summary.addRaw(`### ✅ pr-format passes (${rule})\n`).write();
+              return;
+            }
+            problems.forEach((p) => core.error(p));
+            await core.summary
+              .addRaw([
+                `### ❌ pr-format: ${problems.length} to fix (${rule})`,
+                '',
+                ...problems.map((p) => `- ${p}`),
+                '',
+                'Edit the title or description and save. This check runs again by itself: ' +
+                  'no new commit is needed, and approvals are kept.',
+                '',
+              ].join('\n'))
+              .write();
+            core.setFailed(`pr-format: ${problems.length} to fix in the title or description (${rule}).`);
