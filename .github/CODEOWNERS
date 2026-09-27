@@ -1,0 +1,28 @@
+# CODEOWNERS — who must approve a change.
+#
+# SOC 2 (CM-3): with "Require review from Code Owners" enabled in the branch
+# ruleset, GitHub refuses a merge until an owner of every touched path has
+# approved. That turns "someone reviewed it" into "a senior reviewer looked at
+# it", which is the separation of duties an auditor tests.
+#
+# One rule, deliberately. There is no per-area ownership here — path-specific
+# owners only earn their complexity when different areas have genuinely
+# different owners, and ours do not. A second rule would also be a footgun:
+# the LAST matching line wins and matches do not accumulate, so a narrower rule
+# added later silently replaces this one for those paths.
+#
+# The team is @zoneomics-dev/reviewers — Athar, with Nabeel and Saad as
+# fallbacks. Any one of them satisfies the requirement; GitHub has no notion of
+# a primary reviewer, so the ordering is a team convention, not a rule. Change
+# the reviewer list by changing team membership, not this file.
+#
+# The team must hold write access in its own right. Members holding individual
+# access is NOT enough — GitHub silently ignores the entry and the rule becomes
+# unsatisfiable, with no error shown anywhere.
+
+*                    @zoneomics-dev/reviewers
+
+# Pinned last so a future narrower rule cannot quietly take ownership of the
+# file that decides ownership. Redundant against the line above today, and kept
+# deliberately.
+/.github/CODEOWNERS  @zoneomics-dev/reviewers
