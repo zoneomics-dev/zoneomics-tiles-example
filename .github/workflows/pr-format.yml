@@ -184,13 +184,13 @@ jobs:
                   'answer "How to undo it:".');
               } else {
                 const ticket = text(get('Ticket'));
-                const hasTicket = /\bZON-\d+\b/i.test(ticket);
+                const hasTicket = /\b(ZON|BAS)-\d+\b/i.test(ticket);
                 const noTicket = !hasTicket && /no ticket\s*[—–:,-]+\s*\S.{8,}/i.test(ticket);
                 check('What and why', (s) => text(s).length >= (noTicket ? 80 : 20), noTicket
                   ? 'with no ticket, this carries the whole story: what prompted the change, what it does, and what goes wrong without it.'
                   : 'say what changes and why, in a sentence or two.');
                 check('Ticket', () => hasTicket || noTicket,
-                  'give the ticket, like `ZON-1234`, or write `No ticket — <reason>`.');
+                  'give the ticket, like `ZON-1234` or `BAS-12`, or write `No ticket — <reason>`.');
                 check('Changes', (s) => text(s).length >= 10,
                   'list what changed, one bullet per area.');
                 check('How this was tested', (s) => ticked(s) || text(s).length >= 10,
