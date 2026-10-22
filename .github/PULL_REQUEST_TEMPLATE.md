@@ -20,7 +20,7 @@
 
 <!-- One of these two. Replace this comment with your answer.
 
-       ZON-1234
+       ZON-1234 or BAS-12
 
        No ticket — <reason>. For example: raised in #incidents and fixed the same
        hour · internal tooling, no user-facing change · follow-up to #1234 ·
